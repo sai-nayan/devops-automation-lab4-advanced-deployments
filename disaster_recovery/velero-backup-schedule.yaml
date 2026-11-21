@@ -1,0 +1,79 @@
+# Velero Disaster Recovery Backup Schedule Manifest
+# Organization: Enterprise DevOps Infrastructure
+# Student: Sai Nayan Mamilla (sainayanmamilla)
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: enterprise-prod-backup-schedule
+  namespace: velero
+  labels:
+    app.kubernetes.io/part-of: enterprise-devops
+    environment: production
+    managed-by: velero
+spec:
+  # Automated backup every 15 minutes to guarantee RPO < 15m
+  schedule: "*/15 * * * *"
+  template:
+    includedNamespaces:
+      - production
+      - db-tier
+      - ingress-system
+    excludedResources:
+      - events
+      - events.events.k8s.io
+    includeClusterResources: true
+    storageLocation: default-s3-backup-storage
+    volumeSnapshotLocations:
+      - csi-aws-ebs-snapshots
+    snapshotVolumes: true
+    ttl: 720h0m0s # 30 days retention policy
+    hooks:
+      resources:
+        - name: postgres-quiesce-hook
+          includedNamespaces:
+            - db-tier
+          includedResources:
+            - pods
+          labelSelector:
+            matchLabels:
+              app: postgres-cluster
+          pre:
+            - exec:
+                container: postgres
+                command:
+                  - /bin/sh
+                  - -c
+                  - "psql -U postgres -c 'SELECT pg_backup_start(\"velero_backup\", true);'"
+                onError: Fail
+          post:
+            - exec:
+                container: postgres
+                command:
+                  - /bin/sh
+                  - -c
+                  - "psql -U postgres -c 'SELECT pg_backup_stop();'"
+                onError: Continue
+---
+apiVersion: velero.io/v1
+kind: BackupStorageLocation
+metadata:
+  name: default-s3-backup-storage
+  namespace: velero
+spec:
+  provider: aws
+  objectStorage:
+    bucket: enterprise-devops-velero-backups-2026
+    prefix: cluster-backups/production
+  config:
+    region: us-east-1
+    s3ForcePathStyle: "true"
+---
+apiVersion: velero.io/v1
+kind: VolumeSnapshotLocation
+metadata:
+  name: csi-aws-ebs-snapshots
+  namespace: velero
+spec:
+  provider: aws
+  config:
+    region: us-east-1

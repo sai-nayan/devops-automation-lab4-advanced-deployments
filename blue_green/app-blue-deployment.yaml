@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: enterprise-app-blue
+  namespace: production
+  labels:
+    app: enterprise-app
+    environment: production
+    deployment-track: blue-green
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: enterprise-app
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: enterprise-app
+        version: blue
+        release: v1.0.0
+    spec:
+      containers:
+        - name: app
+          image: enterprise-registry.internal/apps/enterprise-service:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: APP_VERSION
+              value: "1.0.0 (Blue Active)"
+            - name: ENVIRONMENT
+              value: "production"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10

@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+bases:
+  - ../../base
+namespace: production
+namePrefix: prod-
+commonLabels:
+  env: production
+  managed-by: argocd-gitops
+replicas:
+  - name: enterprise-workload
+    count: 5
+images:
+  - name: enterprise-registry.internal/apps/workload
+    newTag: v2.4.0

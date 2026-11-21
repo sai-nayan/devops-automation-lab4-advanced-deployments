@@ -1,0 +1,55 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: http-success-rate-and-latency-analysis
+  namespace: production
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: success-rate
+      interval: 10s
+      successCondition: result[0] >= 0.99
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus-server.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(http_requests_total{service="{{args.service-name}}",status!~"5.*"}[1m]))
+            /
+            sum(rate(http_requests_total{service="{{args.service-name}}"}[1m]))
+    - name: p95-latency
+      interval: 10s
+      successCondition: result[0] <= 0.150
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus-server.monitoring.svc.cluster.local:9090
+          query: |
+            histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service="{{args.service-name}}"}[1m])) by (le))
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: enterprise-stable-service
+  namespace: production
+spec:
+  type: ClusterIP
+  selector:
+    app: enterprise-canary-rollout
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: enterprise-canary-service
+  namespace: production
+spec:
+  type: ClusterIP
+  selector:
+    app: enterprise-canary-rollout
+  ports:
+    - port: 80
+      targetPort: 8080

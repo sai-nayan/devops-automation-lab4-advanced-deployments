@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: enterprise-app-production-service
+  namespace: production
+  labels:
+    app: enterprise-app
+    tier: production-ingress
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  # The selector switches atomically between 'blue' and 'green'
+  selector:
+    app: enterprise-app
+    version: blue
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: enterprise-app-preview-service
+  namespace: production
+  labels:
+    app: enterprise-app
+    tier: internal-qa-preview
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  # Preview service always routes to the candidate version (green)
+  selector:
+    app: enterprise-app
+    version: green

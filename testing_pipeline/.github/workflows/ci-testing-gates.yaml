@@ -1,0 +1,115 @@
+# Enterprise CI/CD Pipeline with Multi-Tier Automated Testing Gates
+# Author: Sai Nayan Mamilla (sainayanmamilla)
+# Target: Production Kubernetes Deployment Verification
+
+name: Enterprise CI/CD Testing & Deployment Gates
+
+on:
+  push:
+    branches: [ main, release/* ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  code-quality-and-linting:
+    name: "Gate 1: Static Code Analysis & Flake8 Linting"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Set up Python Runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Quality Gate Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black ruff
+
+      - name: Execute Code Formatting & Lint Validation
+        run: |
+          echo "[*] Checking black format conformance..."
+          black --check app/ tests/
+          echo "[*] Running flake8 static analysis..."
+          flake8 app/ tests/ --max-line-length=120 --statistics
+
+  unit-and-integration-tests:
+    name: "Gate 2: Unit & Integration Tests (Coverage >= 85%)"
+    needs: code-quality-and-linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Test Dependencies
+        run: |
+          pip install fastapi pydantic httpx pytest pytest-cov pytest-mock
+
+      - name: Run Fast Unit Tests
+        run: |
+          echo "[Gate 2.1] Executing Domain Business Logic Unit Tests..."
+          pytest tests/test_unit.py -v --junitxml=reports/junit-unit.xml
+
+      - name: Run Integration Tests Against Mock Microservice
+        run: |
+          echo "[Gate 2.2] Executing Integration API Health & Transaction Tests..."
+          pytest tests/test_integration.py -v --junitxml=reports/junit-integration.xml
+
+      - name: Enforce Strict Code Coverage Gate (Fail-Under 85%)
+        run: |
+          echo "[Gate 2.3] Evaluating Total Code Coverage Threshold..."
+          pytest --cov=app --cov-report=term-missing --cov-report=html:reports/coverage-html --cov-fail-under=85 tests/
+
+      - name: Upload Test and Coverage Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-coverage-report
+          path: reports/
+
+  container-security-scan:
+    name: "Gate 3: Pre-Deployment Container Vulnerability Scan"
+    needs: unit-and-integration-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Build Local Staging Image
+        run: |
+          docker build -t enterprise-app:${{ github.sha }} .
+
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: enterprise-app:${{ github.sha }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL'
+
+  promote-and-gitops-trigger:
+    name: "Gate 4: Automated Promotion to GitOps Continuous Delivery"
+    needs: [container-security-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Deployment Repo
+        uses: actions/checkout@v4
+
+      - name: Update GitOps Declarative Manifests
+        run: |
+          echo "[*] Quality gates satisfied. Promoting image tag ${{ github.sha }} to ArgoCD..."
+          sed -i "s|newTag: .*|newTag: ${{ github.sha }}|g" gitops/overlays/production/kustomization.yaml
+          git config user.name "Sai Nayan Mamilla (CI Gate)"
+          git config user.email "sainayan4918@gmail.com"
+          git commit -am "chore(release): promote candidate ${{ github.sha }} after automated test gate clearance [skip ci]"
+          echo "[✓] GitOps repository updated. ArgoCD reconciliation triggered."

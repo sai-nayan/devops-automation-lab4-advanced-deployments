@@ -1,0 +1,65 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: enterprise-canary-rollout
+  namespace: production
+  labels:
+    app: enterprise-canary-rollout
+spec:
+  replicas: 10
+  strategy:
+    canary:
+      canaryService: enterprise-canary-service
+      stableService: enterprise-stable-service
+      trafficRouting:
+        nginx:
+          stableIngress: enterprise-app-ingress
+      steps:
+        # Step 1: Route 10% traffic to canary candidate
+        - setWeight: 10
+        - pause: { duration: 30s }
+        - analysis:
+            templates:
+              - templateName: http-success-rate-and-latency-analysis
+            args:
+              - name: service-name
+                value: enterprise-canary-service
+        # Step 2: Route 25% traffic
+        - setWeight: 25
+        - pause: { duration: 30s }
+        - analysis:
+            templates:
+              - templateName: http-success-rate-and-latency-analysis
+            args:
+              - name: service-name
+                value: enterprise-canary-service
+        # Step 3: Route 50% traffic
+        - setWeight: 50
+        - pause: { duration: 30s }
+        - analysis:
+            templates:
+              - templateName: http-success-rate-and-latency-analysis
+            args:
+              - name: service-name
+                value: enterprise-canary-service
+  selector:
+    matchLabels:
+      app: enterprise-canary-rollout
+  template:
+    metadata:
+      labels:
+        app: enterprise-canary-rollout
+    spec:
+      containers:
+        - name: app
+          image: enterprise-registry.internal/apps/enterprise-service:v2.0.0
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
