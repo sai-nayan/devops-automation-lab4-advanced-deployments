@@ -129,37 +129,31 @@ def check_portal_status():
     }
 
     if (!targetTab) {
-        'ERROR_NO_ZOSIMA_TAB';
+        JSON.stringify([]);
     } else {
         const inspectJs = `(function() {
-            const listItems = Array.from(document.querySelectorAll("li, .text-sm, span, p"));
-            const files = [];
-            document.querySelectorAll("input[type=file]").forEach((inp, idx) => {
-                let parent = inp.closest(".rounded-lg") || inp.closest(".border") || inp.parentElement;
-                while (parent && !parent.innerText.includes("marks") && parent !== document.body) {
-                    parent = parent.parentElement;
-                }
-                const text = parent ? parent.innerText : "";
-                const hasPdf = text.includes(".pdf");
-                const match = text.match(/Task_0[1-7][^\\s\\n]+\\.pdf/);
-                files.push({
-                    idx: idx,
-                    hasPdf: hasPdf,
-                    matchedFile: match ? match[0] : null,
-                    uploadedBadge: text.includes("Uploaded") || text.includes("Ready") || hasPdf
+            const results = [];
+            const text = document.body.innerText;
+            for (let i = 1; i <= 7; i++) {
+                const match = text.match(new RegExp("Task_0" + i + "[^\\\\s]+\\\\.pdf"));
+                results.push({
+                    q: i,
+                    fileName: match ? match[0] : ("Task_0" + i + ".pdf"),
+                    uploaded: text.includes("Task_0" + i) && text.includes("Uploaded")
                 });
-            });
-            return JSON.stringify(files);
+            }
+            return JSON.stringify(results);
         })()`;
         targetTab.execute({ javascript: inspectJs });
     }
     """
     proc = subprocess.run(['osascript', '-l', 'JavaScript'], input=jxa, text=True, capture_output=True)
+    out = proc.stdout.strip()
     try:
-        data = json.loads(proc.stdout.strip())
-        return data
+        data = json.loads(out)
+        return data if isinstance(data, list) else []
     except Exception as e:
-        print(f"Status check parsing error: {e}, raw: {proc.stdout}")
+        print(f"Status check parsing error: {e}, raw: {out}")
         return []
 
 def main():
